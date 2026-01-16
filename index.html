@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8" />
+<title>Work Alpha</title>
+<style>
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+}
+#app {
+  display: flex;
+  height: 100vh;
+}
+aside {
+  width: 220px;
+  background: #f2f2f2;
+  padding: 16px;
+}
+aside button {
+  width: 100%;
+  margin-bottom: 8px;
+}
+main {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+}
+.hidden { display: none; }
+.task.done span { text-decoration: line-through; color: #777; }
+.list-row { display: flex; gap: 6px; margin-bottom: 6px; }
+.list-row input { flex: 1; }
+</style>
+</head>
+
+<body>
+<div id="app">
+  <aside>
+    <button onclick="show('pulpit')">Pulpit</button>
+    <button onclick="show('formatka')">Formatka</button>
+    <button onclick="show('blends')">Blends</button>
+    <button onclick="show('kody')">Kody</button>
+  </aside>
+
+  <main>
+    <!-- PULPIT -->
+    <section id="pulpit">
+      <h2>Pulpit</h2>
+
+      <label>Поверх:
+        <select id="floorSelect" onchange="startSession()">
+          <option value="">— вибери —</option>
+          <option>1</option>
+          <option>2</option>
+          <option>3</option>
+        </select>
+      </label>
+
+      <h3>Робочі задачі</h3>
+      <input id="taskInput" placeholder="Нова задача">
+      <button onclick="addTask(false)">Додати</button>
+      <div id="tasks"></div>
+
+      <h3>Особисті задачі</h3>
+      <input id="personalInput" placeholder="Особиста задача">
+      <button onclick="addTask(true)">Додати</button>
+      <div id="personal"></div>
+    </section>
+
+    <!-- FORMATKA -->
+    <section id="formatka" class="hidden">
+      <h2>Formatka</h2>
+      <label>Старт: <input type="number" id="fStart"></label><br>
+      <label>Знайдені: <input type="number" id="fFound"></label><br>
+      <label>Усунуті: <input type="number" id="fFixed"></label><br>
+      <button onclick="saveFormatka()">Зберегти</button>
+    </section>
+
+    <!-- BLENDS -->
+    <section id="blends" class="hidden">
+      <h2>Blends</h2>
+      <select id="blendType">
+        <option>STOW</option>
+        <option>PICK</option>
+      </select>
+      <div class="list-row">
+        <input id="bQL" placeholder="QL">
+        <input id="bLoc1" placeholder="Lokalizacja">
+        <input id="bWhere" placeholder="Gdzie">
+        <input id="bLoc2" placeholder="Lokalizacja 2">
+      </div>
+      <button onclick="addBlend()">Додати</button>
+      <div id="blendList"></div>
+    </section>
+
+    <!-- KODY -->
+    <section id="kody" class="hidden">
+      <h2>Kody</h2>
+      <button onclick="copyCode('ABC123')">ABC123</button>
+      <button onclick="copyCode('XYZ789')">XYZ789</button>
+    </section>
+  </main>
+</div>
+
+<script>
+/* ================== CONFIG ================== */
+const API_URL = 'https://script.google.com/a/macros/zalando.de/s/AKfycbwTir75tq76LyzXJDR1_dWjKuMMkLcmVU4dyyoleOJM_UxfOAXC3eh3JfPAsOXJeKfv/exec';
+const LS = localStorage;
+
+/* ================== NAV ================== */
+function show(id) {
+  document.querySelectorAll('main section').forEach(s => s.classList.add('hidden'));
+  document.getElementById(id).classList.remove('hidden');
+}
+
+/* ================== SESSION ================== */
+function startSession() {
+  const floor = floorSelect.value;
+  if (!floor) return;
+  const now = Date.now();
+  LS.session = JSON.stringify({
+    floor,
+    end: now + (8 * 60 + 40) * 60 * 1000
+  });
+  renderTasks();
+}
+
+/* ================== TASKS ================== */
+function addTask(personal) {
+  const input = personal ? personalInput : taskInput;
+  if (!input.value) return;
+
+  const list = JSON.parse(LS.tasks || '[]');
+  const taskText = input.value;
+
+  list.push({ text: taskText, done: false, personal });
+  LS.tasks = JSON.stringify(list);
+  input.value = '';
+  renderTasks();
+
+  /* SEND TO GOOGLE SHEETS */
+  fetch(API_URL, {
+    method: 'POST',
+    body: JSON.stringify({
+      type: 'task',
+      text: taskText,
+      done: false,
+      personal,
+      floor: floorSelect.value || ''
+    })
+  });
+}
+
+function renderTasks() {
+  tasks.innerHTML = '';
+  personal.innerHTML = '';
+  const list = JSON.parse(LS.tasks || '[]');
+
+  list.forEach((t, i) => {
+    const div = document.createElement('div');
+    div.className = 'task' + (t.done ? ' done' : '');
+    div.innerHTML = `
+      <input type="checkbox" ${t.done ? 'checked' : ''}>
+      <span>${t.text}</span>
+      <button>🗑</button>
+    `;
+
+    div.querySelector('input').onchange = () => {
+      t.done = !t.done;
+      LS.tasks = JSON.stringify(list);
+      renderTasks();
+    };
+
+    div.querySelector('button').onclick = () => {
+      list.splice(i, 1);
+      LS.tasks = JSON.stringify(list);
+      renderTasks();
+    };
+
+    (t.personal ? personal : tasks).appendChild(div);
+  });
+}
+
+/* ================== FORMATKA ================== */
+function saveFormatka() {
+  const data = {
+    start: fStart.value,
+    found: fFound.value,
+    fixed: fFixed.value
+  };
+
+  LS.formatka = JSON.stringify(data);
+
+  fetch(API_URL, {
+    method: 'POST',
+    body: JSON.stringify({
+      type: 'formatka',
+      ...data
+    })
+  });
+}
+
+/* ================== BLENDS ================== */
+function addBlend() {
+  const list = JSON.parse(LS.blends || '[]');
+
+  const blend = {
+    type: blendType.value,
+    ql: bQL.value,
+    l1: bLoc1.value,
+    w: bWhere.value,
+    l2: bLoc2.value
+  };
+
+  list.push(blend);
+  LS.blends = JSON.stringify(list);
+  renderBlends();
+
+  fetch(API_URL, {
+    method: 'POST',
+    body: JSON.stringify({
+      type: 'blend',
+      blendType: blend.type,
+      ql: blend.ql,
+      loc1: blend.l1,
+      where: blend.w,
+      loc2: blend.l2
+    })
+  });
+}
+
+function renderBlends() {
+  blendList.innerHTML = '';
+  const list = JSON.parse(LS.blends || '[]');
+
+  list.forEach((b, i) => {
+    const d = document.createElement('div');
+    d.innerHTML = `
+      ${b.type} | ${b.ql} | ${b.l1} | ${b.w} | ${b.l2}
+      <button>🗑</button>
+    `;
+
+    d.querySelector('button').onclick = () => {
+      list.splice(i, 1);
+      LS.blends = JSON.stringify(list);
+      renderBlends();
+    };
+
+    blendList.appendChild(d);
+  });
+}
+
+/* ================== KODY ================== */
+function copyCode(c) {
+  navigator.clipboard.writeText(c);
+  alert('Скопійовано: ' + c);
+}
+
+/* ================== INIT ================== */
+renderTasks();
+renderBlends();
+</script>
+</body>
+</html>
